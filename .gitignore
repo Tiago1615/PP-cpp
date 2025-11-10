@@ -1,0 +1,9 @@
+# === VSCode files ===
+.vscode/
+*.code-workspace
+
+# === Text files ===
+*.txt
+
+# === Binaries ===
+*.out
