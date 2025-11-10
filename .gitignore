@@ -6,4 +6,11 @@
 *.txt
 
 # === Binaries ===
-*.out
+simple_calculator
+
+# === Ignore all files without extension ===
+*.
+!*/
+!*.cpp
+!*.h
+!.gitignore
