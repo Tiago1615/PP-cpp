@@ -205,7 +205,7 @@ string read_word_after_keyword(const string& keyword)
     while (cin.get(ch) && isalpha(ch)) next += ch;
     cin.unget();
   }
-  else {
+  else{
     cin.unget();
   }
 
@@ -225,16 +225,21 @@ string read_filename(const string& command)
 
   if (isalpha(ch)) {
     filename += ch;
-    while (cin.get(ch) && (isalpha(ch) || isdigit(ch) || ch == '_' || ch == '.' || ch == '-')) {
+    while (cin.get(ch) && (isalpha(ch) || isdigit(ch) || ch == '_' || ch == '.' || ch == '-' || ch == ' ')) {
       filename += ch;
     }
     cin.unget();
-  } else {
+  } 
+  else{
     error("\nExpected filename after '" + command + "'\n");
   }
 
   if (filename.empty()) {
     error("\nExpected filename after '" + command + "'\n");
+  }
+
+  if (filename.size() < 4 || filename.substr(filename.size() -4) != ".txt") {
+    error("\n" + command + " env: filename must end with .txt\n");
   }
 
   return filename;
