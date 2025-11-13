@@ -11,92 +11,92 @@
   Grammar:
 
   Statement:
-      Help
-      Constant Declaration
-      Assign
-      Expression
-      Print
-      Quit
-      Precision
-      Set Precision
-      Show Env
-      Save Env
-      Load Env
+    Help
+    Constant Declaration
+    Assign
+    Expression
+    Print
+    Quit
+    Precision
+    Set Precision
+    Show Env
+    Save Env
+    Load Env
 
   Print:
-      ;
+    ;
 
   Quit:
-      quit
+    quit
 
   Help:
-      help
+    help
 
   Constant Declaration:
-      const Name = Expression
+    const Name = Expression
 
   Assign:
-      Name = Expression
+    Name = Expression
 
   Precision:
-      precision
+    precision
 
   Set Precision:
-      set precision Number
+    set precision Number
 
   Show Env:
-      show env
+    show env
 
   Save Env:
-      save env FileName
+    save env FileName
 
   Load Env:
-      load env FileName
+    load env FileName
 
   Expression:
-      Term
-      Term + Expression
-      Term - Expression
+    Term
+    Term + Expression
+    Term - Expression
 
   Term:
-      Primary
-      Primary * Term 
-      Primary / Term 
-      Primary % Term 
+    Primary
+    Primary * Term 
+    Primary / Term 
+    Primary % Term 
 
   Primary:
-      Function
-      Number
-      Name
-      ( Expression )
-      - Primary
-      + Primary
+    Function
+    Number
+    Name
+    ( Expression )
+    - Primary
+    + Primary
 
   Function:
-      FunctionName ( Expression )
-      FunctionName ( Expression , Expression )
+    FunctionName ( Expression )
+    FunctionName ( Expression , Expression )
 
   FunctionName:
-      sin
-      cos
-      tan
-      asin
-      acos
-      atan
-      exp
-      pow
-      ln
-      log10
-      log2
+    sin
+    cos
+    tan
+    asin
+    acos
+    atan
+    exp
+    pow
+    ln
+    log10
+    log2
 
   Number:
-      floating-point-literal
+    floating-point-literal
 
   Name:
-      a string of letters and numbers (e.g., var1, pi, result123)
+    a string of letters and numbers
 
   FileName:
-      a valid filename (e.g., env.txt, my_env-1.dat)
+    a valid filename (e.g., env.txt, my_env-1.dat)
 */
 
 #include <iostream>
@@ -191,60 +191,6 @@ class Token_stream
     void ignore();
 };
 
-string current_filename = "";
-
-string read_word_after_keyword(const string& keyword)
-{
-  char ch;
-  string next;
-
-  while (cin.get(ch) && isspace(ch));
-
-  if (isalpha(ch)) {
-    next += ch;
-    while (cin.get(ch) && isalpha(ch)) next += ch;
-    cin.unget();
-  }
-  else{
-    cin.unget();
-  }
-
-  if (next != "env") {
-    error("\nExpected 'env' after '" + keyword + "'\n");
-  }
-
-  return next;
-}
-
-string read_filename(const string& command)
-{
-  char ch;
-  string filename;
-
-  while (cin.get(ch) && isspace(ch));
-
-  if (isalpha(ch)) {
-    filename += ch;
-    while (cin.get(ch) && (isalpha(ch) || isdigit(ch) || ch == '_' || ch == '.' || ch == '-' || ch == ' ')) {
-      filename += ch;
-    }
-    cin.unget();
-  } 
-  else{
-    error("\nExpected filename after '" + command + "'\n");
-  }
-
-  if (filename.empty()) {
-    error("\nExpected filename after '" + command + "'\n");
-  }
-
-  if (filename.size() < 4 || filename.substr(filename.size() -4) != ".txt") {
-    error("\n" + command + " env: filename must end with .txt\n");
-  }
-
-  return filename;
-}
-
 Token Token_stream::get()
 {
   if(!buffer.empty()) 
@@ -307,18 +253,11 @@ Token Token_stream::get()
           if(next == "precision") return Token(Token::id::set_precision_token);
           error("Expected 'precision' after 'set'");
         }
-        if (s == "show"){
-          read_word_after_keyword("show");
-          return Token(Token::id::show_env_token);
-        }
+        if (s == "show")return Token(Token::id::show_env_token);
         if (s == "save"){
-          read_word_after_keyword("save");
-          current_filename = read_filename("save");
           return Token(Token::id::save_env_token);
         }
         if (s == "load"){
-          read_word_after_keyword("load");
-          current_filename = read_filename("load");
           return Token(Token::id::load_env_token);
         }
 
@@ -553,7 +492,7 @@ void show_env()
   }
 }
 
-void save_env()
+void save_env(string filename)
 {
   if (names.empty()) {
     error("\nsave env: No variables or constants to save.\n");
@@ -596,7 +535,7 @@ void save_env()
     }
   }
 
-  ofstream out(current_filename);
+  ofstream out(filename);
   if (!out) {
     error("\nsave env: Could not open file for writing\n");
   }
@@ -611,12 +550,12 @@ void save_env()
   }
 
   out.close();
-  cout << "\nEnvironment saved to " << current_filename << " with precision of " << save_precision << " digits.\n\n";
+  cout << "\nEnvironment saved to " << filename << " with precision of " << save_precision << " digits.\n\n";
 }
 
-void load_env()
+void load_env(string filename)
 {
-  ifstream in(current_filename);
+  ifstream in(filename);
   if (!in) {
     error("\nload env: Could not open file for reading\n");
   }
@@ -672,9 +611,7 @@ void load_env()
 
     if (!is_declared(name)){
       define_name(name, value, is_const);
-      cout << "\nLoaded variable : " << name << " = " << value;
-      if (is_const) cout << " (const)\n";
-      else cout << "\n";
+      cout << "\nLoaded variable : " << name << " = " << value << "\n(const: " << (is_const ? "yes" : "no") << ")\n";
     }
     else{
       cout << "\nConflict detected for variable: " << name << "." << endl;
@@ -684,8 +621,7 @@ void load_env()
       cout << "\nChoose an action:\n";
       cout << "  \n1. Keep existing value\n";
       cout << "  \n2. Overwrite with file value\n";
-      cout << "  \n3. Keep both (rename file value)\n";
-      cout << "\n\nSelect option (1-3): ";
+      cout << "\n\nSelect option (1-2): ";
 
       int option;
       bool loop = true;
@@ -706,25 +642,8 @@ void load_env()
             cout << "\nOverwritten '" << name << "' with value from file.\n";
             loop = false;
             break;
-          case 3:
-            {
-              string new_name;
-              int rename_attempts = 0;
-              do {
-                new_name = name + "_file";
-                if (rename_attempts > 0) {
-                  new_name += to_string(rename_attempts);
-                }
-                rename_attempts++;
-              } while (is_declared(new_name));
-
-              define_name(new_name, value, is_const);
-              cout << "\nRenamed file variable to '" << new_name << "'.\n";
-              loop = false;
-            }
-            break;
           default:
-            cout << "\nInvalid option. Please select 1, 2 or 3: ";
+            cout << "\nInvalid option. Please select 1, or 2: ";
             break;
         }
       }
@@ -732,7 +651,25 @@ void load_env()
   }
 
   in.close();
-  cout << "\nEnvironment loaded from " << current_filename << ".\n\n";
+  cout << "\nEnvironment loaded from " << filename << ".\n\n";
+}
+
+string read_filename()
+{
+  char ch;
+  string filename = "";
+
+  cin >> ws;
+  while (cin.get(ch) && ch != ';'){
+    filename += ch;
+  }
+  cin.unget();
+
+  if (filename.empty()) error("Filename expected");
+
+  if (filename.size() < 4 || filename.substr(filename.size() - 4) != ".txt") error("Filename must end with .txt");
+
+  return filename;
 }
 
 double statement()
@@ -742,6 +679,29 @@ double statement()
   {
     case Token::id::const_token:
       return constant_assign();
+    case Token::id::show_env_token:
+      {
+        Token next = ts.get();
+        if (next.name != "env") error("Expected 'env' after 'show'");
+        show_env();
+        return 0;
+      }
+    case Token::id::save_env_token:
+      {
+        Token next = ts.get();
+        if (next.name != "env") error("Expected 'env' after 'save'");
+        string filename = read_filename();
+        save_env(filename);
+        return 0;
+      }
+    case Token::id::load_env_token:
+      {      
+        Token next = ts.get();
+        if (next.name != "env") error("Expected 'env' after 'load'");
+        string filename = read_filename();
+        load_env(filename);
+        return 0;
+      }
     case Token::id::name_token:
       {
         Token tt=ts.get();
@@ -809,9 +769,6 @@ void calculate()
     if(t.kind==Token::id::help_token) { help(); continue; }
     if (t.kind==Token::id::set_precision_token) { set_precision(); continue; }
     if (t.kind==Token::id::precision_token) { show_precision(); continue; }
-    if (t.kind==Token::id::show_env_token) { show_env(); continue; }
-    if (t.kind==Token::id::save_env_token) { save_env(); continue; }
-    if (t.kind==Token::id::load_env_token) { load_env(); continue; }
     ts.unget(t);
     auto the_result=statement();
     cout.setf(ios::fixed);
