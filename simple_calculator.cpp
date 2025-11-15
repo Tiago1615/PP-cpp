@@ -667,7 +667,7 @@ string read_filename()
 
   if (filename.empty()) error("Filename expected");
 
-  if (filename.size() < 4 || filename.substr(filename.size() - 4) != ".txt") error("Filename must end with .txt");
+  if (filename.size() < 4 || filename.substr(filename.size() - 4) != ".txt") error("\nFilename must end with .txt\n");
 
   return filename;
 }
@@ -742,13 +742,13 @@ void help()
     << "\n   - Define a constant:     const pi = 3.1416;"
     << "\n"
     << "\n - Environment Commands:"
-    << "\n   - show env;              --> display current variables/constants"
-    << "\n   - save env filename;     --> save environment to file"
-    << "\n   - load env filename;     --> load environment from file"
+    << "\n   - show env;                  --> display current variables/constants"
+    << "\n   - save env filename.txt;     --> save environment to file"
+    << "\n   - load env filename.txt;     --> load environment from file"
     << "\n"
     << "\n - Precision Settings:"
-    << "\n   - precision;             --> show current display precision"
-    << "\n   - set precision N;       --> set output precision (0-20 digits)"
+    << "\n   - precision;                 --> show current display precision"
+    << "\n   - set precision N;           --> set output precision (0-20 digits)"
     << "\n"
     << "\n Type 'help;' at any time to show this message again."
     << "\n\n";
