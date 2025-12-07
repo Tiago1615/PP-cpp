@@ -320,6 +320,7 @@ void set_value(string s, double d)
   {
     if(names[s].is_const) error("set: const name ",s);
     names[s].value=d;
+    return;
   }
   error("set: undefined name ",s);
 }

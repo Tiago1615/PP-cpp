@@ -1,9 +1,6 @@
 # === VSCode files ===
 .vscode/
 
-# === Text files ===
-*.txt
-
 # === Binaries ===
 simple_calculator
 
@@ -13,3 +10,9 @@ simple_calculator
 !*.cpp
 !*.h
 !.gitignore
+
+# === Ignore build directories ===
+build/
+
+# === Ignore swp files ===
+*.swp
