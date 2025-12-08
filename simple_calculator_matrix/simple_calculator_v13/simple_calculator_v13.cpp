@@ -721,46 +721,29 @@ string format_value_for_file(const gv& v)
   return out;
 }
 
-string trim(const string& s)
-{
-  size_t first = s.find_first_not_of(" \t\r\n");
-  if (first == string::npos) return "";
-  size_t last = s.find_last_not_of(" \t\r\n");
-  return s.substr(first, last - first + 1);
-}
-
 gv parse_value_expr(const string& expr_str)
 {
-  // Evaluamos expr_str como si el usuario hubiera tecleado:  expr_str;
-  // usando el mismo parser (ts, expression, etc.)
+  // Evaluar expr_str como si el usuario hubiera escrito: expr_str;
+  streambuf* old_buf = std::cin.rdbuf();
 
-  // 1) Guardar el buffer original de cin
-  std::streambuf* old_buf = std::cin.rdbuf();
-
-  // 2) Crear un istringstream con la expresión + ';'
-  std::istringstream iss(expr_str + ";");
-  std::cin.rdbuf(iss.rdbuf());  // Redirigimos cin temporalmente
+  istringstream iss(expr_str + ";");
+  cin.rdbuf(iss.rdbuf());
 
   gv result;
   try {
-    // Suponemos que ts.buffer está vacío en este punto.
     result = expression();
 
-    // Consumimos el ';' que hemos añadido
     Token t = ts.get();
     if (t.kind != Token::id::print) {
-      // Algo raro: no hemos visto ';' al final
       error("Invalid expression in env file");
     }
   }
   catch (...) {
-    // Restablecer cin SIEMPRE aunque haya error
-    std::cin.rdbuf(old_buf);
+    cin.rdbuf(old_buf);
     throw;
   }
 
-  // 3) Restaurar cin
-  std::cin.rdbuf(old_buf);
+  cin.rdbuf(old_buf);
   return result;
 }
 
@@ -919,51 +902,28 @@ void load_env(string filename)
   }
 
   while (getline(in, line)){
-    // Esperamos formato:  name = <expr> is_const = <0/1>
-    size_t eq_pos = line.find('=');
-    if (eq_pos == string::npos) {
-      error("load env: malformed line (missing '='): " + line);
-    }
-
-    // 1) Nombre
-    string name = trim(line.substr(0, eq_pos));
-
-    // 2) Resto después del primer '='
-    string rest = trim(line.substr(eq_pos + 1));
-    // Ahora rest debería ser:  {{...}} is_const = 0
-
-    // Buscar "is_const"
-    size_t is_pos = rest.find("is_const");
-    if (is_pos == string::npos) {
-      error("load env: 'is_const' not found in line: " + line);
-    }
-
-    // 3) La parte de la expresión: antes de "is_const"
-    string expr_str = trim(rest.substr(0, is_pos));
-
-    // 4) La cola: "is_const = 0"
-    string tail = rest.substr(is_pos);  // empieza en 'i' de is_const
-    istringstream tail_ss(tail);
-    string is_label, eq2;
+    istringstream stream(line);
+    string name;
+    string eq;
+    string value_str;
+    string is_const_str;
     int is_const_flag = 0;
 
-    tail_ss >> is_label >> eq2 >> is_const_flag;
-    if (!tail_ss || is_label != "is_const" || eq2 != "=") {
-      error("load env: malformed is_const section in line: " + line);
+    // Esperamos:  name = value is_const = 0
+    if (!(stream >> name >> eq >> value_str >> is_const_str >> eq >> is_const_flag)) {
+      error("load env: malformed line: " + line);
     }
 
-    // 5) Evaluar la expresión para reconstruir el gv
-    gv value = parse_value_expr(expr_str);
+    gv value = parse_value_expr(value_str);
 
-    // 6) Insertar o resolver conflicto con el entorno actual
     if (!is_declared(name)) {
       define_name(name, value, is_const_flag != 0);
       cout << "\nLoaded variable: " << name << " (const: " << (is_const_flag ? "yes" : "no") << ")\n";
-    } else {
+    } 
+    else {
       cout << "\nConflict detected for variable: " << name << ".\n";
       cout << "Existing value: " << get_value(name) << " (const: " << (is_constant(name) ? "yes" : "no") << ")\n";
       cout << "File value: " << value << " (const: " << (is_const_flag ? "yes" : "no") << ")\n";
-
       cout << "\nChoose an action:\n";
       cout << "  1. Keep existing value\n";
       cout << "  2. Overwrite with file value\n";
@@ -971,10 +931,8 @@ void load_env(string filename)
 
       int option;
       bool loop = true;
-
       while (loop) {
         cin >> option;
-
         switch (option) {
           case 1:
             cout << "Keeping existing value for '" << name << "'.\n";
