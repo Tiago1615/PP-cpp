@@ -133,7 +133,10 @@ struct Token
     help_token,
     function_token,
     precision_token,
-    set
+    set,
+    show_env_token,
+    save_env_token,
+    load_env_token
   };
 
   id kind;
@@ -236,6 +239,13 @@ Token Token_stream::get()
         if(s=="help") return Token(Token::id::help_token);
         if(s=="set") return Token(Token::id::set);
         if(s=="precision") return Token(Token::id::precision_token);
+        if (s == "show")return Token(Token::id::show_env_token);
+        if (s == "save"){
+          return Token(Token::id::save_env_token);
+        }
+        if (s == "load"){
+          return Token(Token::id::load_env_token);
+        }
 
         if(s=="sin") return Token(s,sin);
         if(s=="cos") return Token(s,cos);
@@ -683,6 +693,328 @@ gv constant_assign()
   return v;
 }
 
+void set_precision(int digits)
+{
+  if (digits < 0 || digits > 20)
+    error("Precision must be between 0 and 20");
+  precision = digits;
+  cout.setf(ios::fixed);
+  cout.precision(precision);
+}
+
+string format_value_for_file(const gv& v)
+{
+  // 1) Volcamos el gv a un string tal y como se imprime ahora
+  ostringstream oss;
+  oss << v;
+  string s = oss.str();
+
+  // 2) Releemos s como stream y cogemos "tokens"
+  istringstream iss(s);
+  string token;
+  string out;
+
+  while (iss >> token) {   // operator>> en string salta cualquier whitespace
+    out += token;
+  }
+
+  return out;
+}
+
+string trim(const string& s)
+{
+  size_t first = s.find_first_not_of(" \t\r\n");
+  if (first == string::npos) return "";
+  size_t last = s.find_last_not_of(" \t\r\n");
+  return s.substr(first, last - first + 1);
+}
+
+gv parse_value_expr(const string& expr_str)
+{
+  // Evaluamos expr_str como si el usuario hubiera tecleado:  expr_str;
+  // usando el mismo parser (ts, expression, etc.)
+
+  // 1) Guardar el buffer original de cin
+  std::streambuf* old_buf = std::cin.rdbuf();
+
+  // 2) Crear un istringstream con la expresión + ';'
+  std::istringstream iss(expr_str + ";");
+  std::cin.rdbuf(iss.rdbuf());  // Redirigimos cin temporalmente
+
+  gv result;
+  try {
+    // Suponemos que ts.buffer está vacío en este punto.
+    result = expression();
+
+    // Consumimos el ';' que hemos añadido
+    Token t = ts.get();
+    if (t.kind != Token::id::print) {
+      // Algo raro: no hemos visto ';' al final
+      error("Invalid expression in env file");
+    }
+  }
+  catch (...) {
+    // Restablecer cin SIEMPRE aunque haya error
+    std::cin.rdbuf(old_buf);
+    throw;
+  }
+
+  // 3) Restaurar cin
+  std::cin.rdbuf(old_buf);
+  return result;
+}
+
+void show_env()
+{
+  if (names.empty() && functions.empty()) {
+    error("\nshow env: (none)\n");
+  }
+
+  if (!names.empty()){
+    cout << "\nVariables, and constants :" << endl << endl;
+    for (const auto& [key, val] : names) {
+      cout << "  " << key << " = " << val.value;
+      if (val.is_const) cout << " (const)";
+      cout << endl << endl;
+    }
+  }
+  else{
+    cout << "\nNo variables or constants defined." << endl << endl;
+  }
+
+  if (!functions.empty()){
+    cout << "\nDefined functions:" << endl << endl;
+    for (const auto& [fname, fdef] : functions) {
+      cout << "  " << fname << "(";
+      for (size_t i = 0; i < fdef.params.size(); ++i) {
+        cout << fdef.params[i];
+        if (i < fdef.params.size() - 1) cout << ", ";
+      }
+      cout << ") = ";
+      for (const auto& tok : fdef.expression) {
+        if (tok.kind == Token::id::number) {
+          cout << tok.value << " ";
+        } else if (tok.kind == Token::id::name_token) {
+          cout << tok.name << " ";
+        } else if (tok.kind == Token::id::function_token) {
+          cout << tok.name << " ";
+        } else if (tok.kind == Token::id::char_token) {
+          cout << tok.symbol << " ";
+        }
+      }
+      cout << endl << endl;
+    }
+  }
+  else{
+    cout << "\nNo functions defined." << endl << endl;
+  }
+}
+
+void save_env(string filename)
+{
+  if (names.empty()) {
+    error("\nsave env: No variables or constants to save.\n");
+  }
+
+  cout 
+    << "\n Enter precision for saving:"
+    << "\n"
+    << "\n1. Default (6 digits)"
+    << "\n2. Medium (12 digits)"
+    << "\n3. High (19 digits)";
+  cout << "\n\nSelect option (1-3): ";
+
+  int option;
+  int save_precision;
+  bool loop = true;
+
+  while (loop){
+    cin.clear();
+    cin.ignore(numeric_limits<streamsize>::max(), '\n');
+
+    cin >> option;
+
+    switch (option){
+      case 1:
+        save_precision = 6;
+        loop = false;
+        break;
+      case 2:
+        save_precision = 12;
+        loop = false;
+        break;
+      case 3:
+        save_precision = 19;
+        loop = false;
+        break;
+      default:
+        cout << "\nInvalid option. Please select 1, 2, or 3: ";
+        break;
+    }
+  }
+
+  ofstream out(filename);
+  if (!out) {
+    error("\nsave env: Could not open file for writing\n");
+  }
+
+  out.setf(ios::fixed);
+  out.precision(save_precision);
+
+  out << "Precision = " << save_precision << endl;
+
+  for (const auto& [key, val] : names) {
+    string formatted_value = format_value_for_file(val.value);
+    out << key << " = " << formatted_value << " is_const = " << val.is_const << endl;
+  }
+
+  out.close();
+  cout << "\nEnvironment saved to " << filename << " with precision of " << save_precision << " digits.\n\n";
+}
+
+void load_env(string filename)
+{
+  ifstream in(filename);
+  if (!in) {
+    error("\nload env: Could not open file for reading\n");
+  }
+
+  string line;
+
+  if (getline(in, line)) {
+    istringstream header(line);
+    string label, eq;
+    int file_precision;
+    header >> label >> eq >> file_precision;
+
+    cout << "\nThe file specifies a precision of " << file_precision << " digits.";
+    cout << "\nDo you want to apply this precision to future outputs?";
+    cout << "\n\n 1. Yes";
+    cout << "\n 2. No";
+    cout << "\n\nSelect option (1-2): ";
+
+    int option;
+    bool loop = true;
+    while (loop) {
+      cin.clear();
+      cin.ignore(numeric_limits<streamsize>::max(), '\n');
+
+      cin >> option;
+
+      switch(option){
+        case 1:
+          set_precision(file_precision);
+          cout << "\nPrecision set to " << precision << " digits.\n";
+          loop = false;
+          break;
+        case 2:
+          cout << "\nKeeping current precision of " << precision << " digits.\n";
+          loop = false;
+          break;
+        default:
+          cout << "\nInvalid option. Please select 1 or 2: ";
+          break;
+      }
+    }
+  }
+
+  while (getline(in, line)){
+    // Esperamos formato:  name = <expr> is_const = <0/1>
+    size_t eq_pos = line.find('=');
+    if (eq_pos == string::npos) {
+      error("load env: malformed line (missing '='): " + line);
+    }
+
+    // 1) Nombre
+    string name = trim(line.substr(0, eq_pos));
+
+    // 2) Resto después del primer '='
+    string rest = trim(line.substr(eq_pos + 1));
+    // Ahora rest debería ser:  {{...}} is_const = 0
+
+    // Buscar "is_const"
+    size_t is_pos = rest.find("is_const");
+    if (is_pos == string::npos) {
+      error("load env: 'is_const' not found in line: " + line);
+    }
+
+    // 3) La parte de la expresión: antes de "is_const"
+    string expr_str = trim(rest.substr(0, is_pos));
+
+    // 4) La cola: "is_const = 0"
+    string tail = rest.substr(is_pos);  // empieza en 'i' de is_const
+    istringstream tail_ss(tail);
+    string is_label, eq2;
+    int is_const_flag = 0;
+
+    tail_ss >> is_label >> eq2 >> is_const_flag;
+    if (!tail_ss || is_label != "is_const" || eq2 != "=") {
+      error("load env: malformed is_const section in line: " + line);
+    }
+
+    // 5) Evaluar la expresión para reconstruir el gv
+    gv value = parse_value_expr(expr_str);
+
+    // 6) Insertar o resolver conflicto con el entorno actual
+    if (!is_declared(name)) {
+      define_name(name, value, is_const_flag != 0);
+      cout << "\nLoaded variable: " << name << " (const: " << (is_const_flag ? "yes" : "no") << ")\n";
+    } else {
+      cout << "\nConflict detected for variable: " << name << ".\n";
+      cout << "Existing value: " << get_value(name) << " (const: " << (is_constant(name) ? "yes" : "no") << ")\n";
+      cout << "File value: " << value << " (const: " << (is_const_flag ? "yes" : "no") << ")\n";
+
+      cout << "\nChoose an action:\n";
+      cout << "  1. Keep existing value\n";
+      cout << "  2. Overwrite with file value\n";
+      cout << "\nSelect option (1-2): ";
+
+      int option;
+      bool loop = true;
+
+      while (loop) {
+        cin >> option;
+
+        switch (option) {
+          case 1:
+            cout << "Keeping existing value for '" << name << "'.\n";
+            loop = false;
+            break;
+          case 2:
+            names[name] = Value(name, value, is_const_flag != 0);
+            cout << "Overwritten '" << name << "' with value from file.\n";
+            loop = false;
+            break;
+          default:
+            cout << "Invalid option. Please select 1 or 2: ";
+            break;
+        }
+      }
+    }
+  }
+
+  in.close();
+  cout << "\nEnvironment loaded from " << filename << ".\n\n";
+}
+
+string read_filename()
+{
+  char ch;
+  string filename = "";
+
+  cin >> ws;
+  while (cin.get(ch) && ch != ';'){
+    filename += ch;
+  }
+  cin.unget();
+
+  if (filename.empty()) error("Filename expected");
+
+  if (filename.size() < 4 || filename.substr(filename.size() - 4) != ".txt") error("\nFilename must end with .txt\n");
+
+  return filename;
+}
+
 gv statement()
 {
   #if DEBUG_FUNC
@@ -696,7 +1028,29 @@ gv statement()
     case Token::id::const_token:
       return constant_assign();
       break;
-
+    case Token::id::show_env_token:
+      {
+        Token next = ts.get();
+        if (next.name != "env") error("Expected 'env' after 'show'");
+        show_env();
+        return 0.0;
+      }
+    case Token::id::save_env_token:
+      {
+        Token next = ts.get();
+        if (next.name != "env") error("Expected 'env' after 'save'");
+        string filename = read_filename();
+        save_env(filename);
+        return 0.0;
+      }
+    case Token::id::load_env_token:
+      {      
+        Token next = ts.get();
+        if (next.name != "env") error("Expected 'env' after 'load'");
+        string filename = read_filename();
+        load_env(filename);
+        return 0.0;
+      }
     case Token::id::name_token:
       {
         Token name_token = t;
@@ -767,62 +1121,66 @@ void clean_up_mess()
 
 void help()
 {
-  #if DEBUG_FUNC
-    cout<<__func__<<std::endl;
-  #endif // DEBUG_FUNC
-           
   cout
-    <<" "<<PROGRAM_NAME<<" - v"<<version<<" - MUSIANI - Programación y Prototipado"
-    <<"\n"
-    <<"\n This  is  a simple  calculator  which  accepts  aritmetic"
-    <<"\n expressions  with  numeric  literals and simbolic  values"
-    <<"\n like constants and variables."
-    <<"\n"
-    <<"\n Allows also the use of the following fundamental functions:"
-    <<"\n"
-    <<"\n   sin, cos, tan, asin, acos, atan"
-    <<"\n   exp, pow, ln, log10, log2"
-    <<"\n"
-    <<"\nIt is a matricial calculator, and accepts matrix literals with the following"
-    <<"\nnotation (spaces, line feeds and carry returns are skipped):"
-    <<"\n"
-    <<"\n   {{1,2},{-2,-1}};"
-    <<"\n   or"
-    <<"\n   {"
-    <<"\n     { 122.000000, 244.000000, 366.000000 },"
-    <<"\n     { 244.000000, 488.000000, 732.000000 },"
-    <<"\n     { 366.000000, 732.000000, 1098.000000 }"
-    <<"\n   }"
-    <<"\n   or"
-    <<"\n   { 0.540302, 0.004426, 0.004426, -0.999961, -0.013277 }"
-    <<"\n"
-    <<"\n Notation is very simple, as shown in the following examples:"
-    <<"\n "
-    <<"\n   2+3*7-(8-3.2)-1/3; (aritmetic expression)"
-    <<"\n   a=3; (assign of a value to a variable)"
-    <<"\n   const pi=3.141592; (assign of a value to a constant)"
-    <<"\n   2*pi-a; (arithmetic expression with variables and constants)"
-    <<"\n   sin(2*pi/4); (arithmetic expression with functions)"
-    <<"\n   const e=exp(1); (arithmetic expression with functions)" 
-    <<"\n   ln(2*e/pi); (arithmetic expression with functions)"
-    <<"\n   pow(3,2); (arithmetic expression with functions)"
-    <<"\n   v={1,1,2,3,5,8,13,21,34} (assign a line vector to a varible)"
-    <<"\n   exp(v) (arithmetic expression with functions and a line vector)"
-    <<"\n   a={"
-    <<"\n     { 122.000000, 244.000000, 366.000000 },"
-    <<"\n     { 244.000000, 488.000000, 732.000000 },"
-    <<"\n     { 366.000000, 732.000000, 1098.000000 }"
-    <<"\n   } (a literal matrix assigned to a varible)"<<"\n"
-    <<"\n"
-    <<"\n Mind that all expressions should be finished with a symbol ';'."
-    <<"\n For finishing the execution type \"quit\"."
-    <<"\n"
-    <<"\n Additional commands: "
-    <<"\n"
-    <<"\n   precision; (shows how many fractional digits are used for showing calculator's results)"
-    <<"\n   set precision <numeric_expression>; (changes calculator's precision)"
-    <<"\n"
-  ; 
+    << "\n =============================================================="
+    << "\n  This is a simple calculator for arithmetic expressions"
+    << "\n  supporting variables, constants, matrices and functions."
+    << "\n =============================================================="
+    << "\n"
+    << "\n - Basic Usage:"
+    << "\n   - Use ';' to end each statement"
+    << "\n   - Type 'quit' to exit the program"
+    << "\n   - Example:  a = 5 + 3;"
+    << "\n"
+    << "\n - Mathematical Functions Supported:"
+    << "\n   - Trigonometric:   sin(x), cos(x), tan(x)"
+    << "\n   - Inverse trig:    asin(x), acos(x), atan(x)"
+    << "\n   - Exponential:     exp(x), pow(x, y)"
+    << "\n   - Logarithmic:     ln(x), log10(x), log2(x)"
+    << "\n"
+    << "\n - Variables and Constants:"
+    << "\n   - Assign a variable:      x = 42;"
+    << "\n   - Define a constant:      const pi = 3.141592;"
+    << "\n   - Use them in expressions: 2*pi - x;"
+    << "\n"
+    << "\n - Matrices and Vectors:"
+    << "\n   This is a matrix calculator. It accepts matrix literals using"
+    << "\n   curly braces '{' '}'. Spaces and line breaks are ignored."
+    << "\n"
+    << "\n   Examples of matrix notation:"
+    << "\n     {{1,2},{-2,-1}};"
+    << "\n"
+    << "\n     {"
+    << "\n       { 122.0, 244.0, 366.0 },"
+    << "\n       { 244.0, 488.0, 732.0 },"
+    << "\n       { 366.0, 732.0, 1098.0 }"
+    << "\n     };"
+    << "\n"
+    << "\n     { 0.540302, 0.004426, 0.004426, -0.999961, -0.013277 };"
+    << "\n"
+    << "\n   You can assign them to variables and use them in expressions:"
+    << "\n     v = {1,1,2,3,5,8,13,21,34};"
+    << "\n     pow(v,2);     (apply exp element-wise)"
+    << "\n"
+    << "\n     a = {"
+    << "\n       { 122.0, 244.0, 366.0 },"
+    << "\n       { 244.0, 488.0, 732.0 },"
+    << "\n       { 366.0, 732.0, 1098.0 }"
+    << "\n     };"
+    << "\n     a * v;      (matrix–vector / matrix–matrix operations, when valid)"
+    << "\n"
+    << "\n - Environment Commands:"
+    << "\n   - show env;                 --> display current variables/constants"
+    << "\n   - save env filename.txt;    --> save environment to file"
+    << "\n   - load env filename.txt;    --> load environment from file"
+    << "\n"
+    << "\n - Precision Settings:"
+    << "\n   - precision;                --> show current display precision"
+    << "\n   - set precision N;          --> set output precision (0-20 digits)"
+    << "\n"
+    << "\n Remember: all expressions/statements must end with ';'"
+    << "\n Type 'help;' at any time to show this message again."
+    << "\n\n";
 }
 
 void precision_statement()
