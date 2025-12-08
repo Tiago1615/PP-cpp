@@ -334,6 +334,12 @@ bool is_constant(const string& s)
 }
 
 bool is_declared(const string& s) { return (names.find(s)!=names.end()); }
+bool is_function_declared(const string& s)
+{
+  auto pos = s.find('(');
+  string fname = s.substr(0, pos);
+  return (functions.find(fname) != functions.end());
+}
 
 void define_name(const string& s, const gv& d, bool constant=false)
 { names[s]=Value(s,d,constant); }
@@ -346,6 +352,7 @@ int precision=default_precision;
 gv expression();
 gv define_function(const string& name, const vector<Token>& param_tokens);
 gv evaluate_function(const string& name, const vector<gv>& args);
+gv statement();
 bool last_statement_was_function_definition = false;
 
 gv function_name()
@@ -601,9 +608,9 @@ gv evaluate_function(const string& fname, const vector<gv>& args)
 
 gv define_function(const string& name, const vector<Token>& param_tokens)
 {
-#if DEBUG_FUNC
-  cout << __func__ << endl;
-#endif
+  #if DEBUG_FUNC
+    cout << __func__ << endl;
+  #endif
 
   // 1) Parsear la lista de parámetros a partir de los tokens
   // param_tokens contiene: x , y , z ... (sin el '(' ni el ')')
@@ -747,6 +754,36 @@ gv parse_value_expr(const string& expr_str)
   return result;
 }
 
+string format_function_for_file(const string& fname, const Defined_function& fdef)
+{
+  ostringstream oss;
+
+  // Cabecera: f(x,y) =
+  oss << fname << "(";
+  for (size_t i = 0; i < fdef.params.size(); ++i) {
+    oss << fdef.params[i];
+    if (i + 1 < fdef.params.size()) oss << ",";
+  }
+  oss << ") = ";
+
+  // Cuerpo: reconstruimos la expresión
+  for (const auto& tok : fdef.expression) {
+    if (tok.kind == Token::id::number) {
+      oss << tok.value;
+    } 
+    else if (tok.kind == Token::id::name_token || tok.kind == Token::id::function_token) {
+      oss << tok.name;
+    } 
+    else if (tok.kind == Token::id::char_token) {
+      oss << tok.symbol;
+    }
+  }
+
+  oss << " ";
+
+  return oss.str();
+}
+
 void show_env()
 {
   if (names.empty() && functions.empty()) {
@@ -777,9 +814,7 @@ void show_env()
       for (const auto& tok : fdef.expression) {
         if (tok.kind == Token::id::number) {
           cout << tok.value << " ";
-        } else if (tok.kind == Token::id::name_token) {
-          cout << tok.name << " ";
-        } else if (tok.kind == Token::id::function_token) {
+        } else if (tok.kind == Token::id::name_token || tok.kind == Token::id::function_token) {
           cout << tok.name << " ";
         } else if (tok.kind == Token::id::char_token) {
           cout << tok.symbol << " ";
@@ -795,8 +830,8 @@ void show_env()
 
 void save_env(string filename)
 {
-  if (names.empty()) {
-    error("\nsave env: No variables or constants to save.\n");
+  if (names.empty() && functions.empty()) {
+    error("\nsave env: No variables or user defined functions to save.\n");
   }
 
   cout 
@@ -849,6 +884,13 @@ void save_env(string filename)
   for (const auto& [key, val] : names) {
     string formatted_value = format_value_for_file(val.value);
     out << key << " = " << formatted_value << " is_const = " << val.is_const << endl;
+  }
+
+  if (!functions.empty()){
+    for (const auto& [fname, fexp]: functions) {
+      string formatted_function = format_function_for_file(fname, fexp);
+      out << formatted_function << "is_const = 0" << endl;
+    }
   }
 
   out.close();
@@ -907,45 +949,105 @@ void load_env(string filename)
     string eq;
     string value_str;
     string is_const_str;
-    int is_const_flag = 0;
+    int is_const;
 
-    // Esperamos:  name = value is_const = 0
-    if (!(stream >> name >> eq >> value_str >> is_const_str >> eq >> is_const_flag)) {
-      error("load env: malformed line: " + line);
+    stream >> name >> eq >> value_str >> is_const_str >> eq >> is_const;
+
+    // Comprobar si name contiene paréntesis -> función
+    bool is_function = (name.find('(') != string::npos) && (name.find(')') != string::npos);
+
+    if (!is_function){
+      gv value = parse_value_expr(value_str);
+
+      if (!is_declared(name)) {
+        define_name(name, value, is_const);
+        cout << "\nLoaded variable: " << name << " (const: " << (is_const ? "yes" : "no") << ")\n";
+      } 
+      else {
+        cout << "\nConflict detected for variable: " << name << ".\n";
+        cout << "\nChoose an action:\n";
+        cout << "  1. Keep existing value\n";
+        cout << "  2. Overwrite with file value\n";
+        cout << "\nSelect option (1-2): ";
+
+        int option;
+        bool loop = true;
+        while (loop) {
+          cin >> option;
+          switch (option) {
+            case 1:
+              cout << "Keeping existing value for '" << name << "'.\n";
+              loop = false;
+              break;
+            case 2:
+              names[name] = Value(name, value, is_const);
+              cout << "Overwritten '" << name << "' with value from file.\n";
+              loop = false;
+              break;
+            default:
+              cout << "Invalid option. Please select 1 or 2: ";
+              break;
+          }
+        }
+      }
     }
+    else{
+      if (!is_function_declared(name)){
+        // Definir la función usando tu propio parser
+        string func = name + " = " + value_str + ";";
+        streambuf* old_buf = cin.rdbuf();
+        istringstream func_stream(func);
+        cin.rdbuf(func_stream.rdbuf());
 
-    gv value = parse_value_expr(value_str);
+        try {
+          (void)statement();
+        }
+        catch (...) {
+          cin.rdbuf(old_buf);
+          throw;
+        }
 
-    if (!is_declared(name)) {
-      define_name(name, value, is_const_flag != 0);
-      cout << "\nLoaded variable: " << name << " (const: " << (is_const_flag ? "yes" : "no") << ")\n";
-    } 
-    else {
-      cout << "\nConflict detected for variable: " << name << ".\n";
-      cout << "Existing value: " << get_value(name) << " (const: " << (is_constant(name) ? "yes" : "no") << ")\n";
-      cout << "File value: " << value << " (const: " << (is_const_flag ? "yes" : "no") << ")\n";
-      cout << "\nChoose an action:\n";
-      cout << "  1. Keep existing value\n";
-      cout << "  2. Overwrite with file value\n";
-      cout << "\nSelect option (1-2): ";
+        cin.rdbuf(old_buf);
+        cout << "\nLoaded function: " << name << " = " << value_str << "\n";
+      }
+      else{
+        cout << "\nConflict detected for function: " << name << ".\n";
+        cout << "Choose an action:\n";
+        cout << "  1. Keep existing function\n";
+        cout << "  2. Overwrite with file definition\n";
+        cout << "\nSelect option (1-2): ";
 
-      int option;
-      bool loop = true;
-      while (loop) {
-        cin >> option;
-        switch (option) {
-          case 1:
-            cout << "Keeping existing value for '" << name << "'.\n";
-            loop = false;
-            break;
-          case 2:
-            names[name] = Value(name, value, is_const_flag != 0);
-            cout << "Overwritten '" << name << "' with value from file.\n";
-            loop = false;
-            break;
-          default:
-            cout << "Invalid option. Please select 1 or 2: ";
-            break;
+        int option;
+        bool loop = true;
+
+        while (loop){
+          cin >> option;
+          switch (option) {
+            case 1:
+              cout << "Keeping existing definition for function '" << name << "'.\n";
+              loop = false;
+              break;
+            case 2:
+              {
+                streambuf* old_buf = cin.rdbuf();
+                istringstream func_stream(name + " = " + value_str + ";");
+                cin.rdbuf(func_stream.rdbuf());
+                try {
+                  (void)statement();
+                }
+                catch (...) {
+                  cin.rdbuf(old_buf);
+                  throw;
+                }
+                cin.rdbuf(old_buf);
+                cout << "Overwritten function '" << name << "' with definition from file.\n";
+                loop = false;
+                break;
+              }
+            default:
+              cout << "Invalid option. Please select 1 or 2: ";
+              break;
+          }
         }
       }
     }
@@ -1017,16 +1119,16 @@ gv statement()
         // ¿Puede ser una definición de función? f(...)
         if (next.is_symbol('(')) {
           // Leemos todo hasta la ')' correspondiente para ver qué hay después
-          vector<Token> between_parens;   // tokens entre '(' y ')', más la ')'
+          vector<Token> params;   // tokens entre '(' y ')', más la ')'
           int level = 1;
 
           while (level > 0) {
             Token x = ts.get();
-            between_parens.push_back(x);
+            params.push_back(x);
             if (x.is_symbol('(')) ++level;
             else if (x.is_symbol(')')) --level;
           }
-          // Ahora between_parens incluye TODO desde el primer token tras '(' hasta la ')'
+          // Ahora params incluye TODO desde el primer token tras '(' hasta la ')'
 
           Token after = ts.get(); // token justo después de los paréntesis
 
@@ -1034,17 +1136,17 @@ gv statement()
             // DEFINICIÓN DE FUNCIÓN: f(x,y)=...
 
             // Quitamos la ')' del final para quedarnos solo con los parámetros
-            if (!between_parens.empty() && between_parens.back().is_symbol(')')) {
-              between_parens.pop_back();
+            if (!params.empty() && params.back().is_symbol(')')) {
+              params.pop_back();
             }
 
-            return define_function(name_token.name, between_parens);
+            return define_function(name_token.name, params);
           } else {
             // NO es definición (es una expresión que empieza por f(...))
             // Devolvemos todo al stream para que lo procese expression()
             ts.unget(after);
-            for (int i = int(between_parens.size()) - 1; i >= 0; --i)
-              ts.unget(between_parens[i]);
+            for (int i = int(params.size()) - 1; i >= 0; --i)
+              ts.unget(params[i]);
             ts.unget(Token('('));
             ts.unget(name_token);
             return expression();
