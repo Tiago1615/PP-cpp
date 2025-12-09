@@ -255,8 +255,9 @@ Token Token_stream::get()
         if(s=="atan") return Token(s,atan);
         if(s=="exp") return Token(s,exp);
 
-        if(s=="pow") return Token(s,nullptr); // WARNING: this is the exception, pow has two arguments
-                                            //
+        if(s=="pow") return Token(s,nullptr); // pow tiene dos argumentos, por eso nullptr
+        if (s=="inv") return Token(s, nullptr); // la inversa de una matriz, se trata aparte
+
         if(s=="ln") return Token(s,log);
         if(s=="log10") return Token(s,log10);
         if(s=="log2") return Token(s,log2);
@@ -370,6 +371,26 @@ gv function_name()
   tt=ts.get();
   if(tt.is_symbol(')')) 
   {
+    if (t.name == "inv"){
+      if (v.is_matrix()){
+        try{
+          auto m = v.get<typename gv::matrix_t>();
+          auto inv_m = m.make_inverse();
+          return gv(inv_m);
+        }
+        catch (const exception& e){
+          error(string("inv function error: ") + e.what());
+        }
+      }
+
+      if (v.is_scalar()){
+        auto n = v.get<typename gv::scalar_t>();
+        if (n == 0) error("cannot invert zero");
+        return gv(1.0/n);
+      }
+
+      error("inv function requires a scalar or a matrix");
+    }
     if(t.function) return v.call_function(t.function);
     else error(t.name," needs two arguments");
   }
@@ -1141,7 +1162,8 @@ gv statement()
             }
 
             return define_function(name_token.name, params);
-          } else {
+          } 
+          else {
             // NO es definición (es una expresión que empieza por f(...))
             // Devolvemos todo al stream para que lo procese expression()
             ts.unget(after);
@@ -1158,10 +1180,12 @@ gv statement()
           ts.unget(next);
           ts.unget(name_token);
           return assign();
-        } else {
+        } 
+        else {
           ts.unget(next);
-        return expression();
-        }    ts.unget(name_token);
+          ts.unget(name_token);
+          return expression();
+        }
       }
       break;
 
