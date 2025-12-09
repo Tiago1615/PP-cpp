@@ -205,6 +205,18 @@
         return gv; 
       }
 
+      bool is_scalar() const
+      {
+        throw_if_nullptr__();
+        return dynamic_cast<scalar_t*>(ptr__) != nullptr;
+      }
+
+      bool is_matrix() const
+      {
+        throw_if_nullptr__();
+        return dynamic_cast<matrix_t*>(ptr__) != nullptr;
+      }
+
       void to_stream(ostream& os) const 
       { 
         if(ptr__) ptr__->to_stream(os);

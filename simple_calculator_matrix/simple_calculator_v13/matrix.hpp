@@ -160,6 +160,8 @@
   
           return t;
         }
+
+        matrix make_inverse() const;
   
         void save_as(const string& file_name) const;
   
@@ -352,6 +354,80 @@
   
       return *this;
     }
+
+    template<typename T>
+    matrix<T> matrix<T>::make_inverse() const
+    {
+      // Debe ser cuadrada
+      if (rows__ != columns__) {
+        ostringstream str_stream;
+        str_stream << "cannot invert a non-square matrix ("<< __func__ << "() in " << __FILE__ << ":" << __LINE__ << ")";
+        throw invalid_argument(str_stream.str());
+      }
+
+      const size_t n = rows__;
+
+      // Copiamos la matriz original en 'a'
+      matrix<T> a(*this);
+
+      // Construimos la identidad en 'inv'
+      matrix<T> inv(n, n);
+      for (size_t i = 0; i < n; ++i)
+        for (size_t j = 0; j < n; ++j)
+          inv[i][j] = (i == j) ? T{1} : T{0};
+
+      // Gauss-Jordan con pivoteo parcial
+      for (size_t col = 0; col < n; ++col) {
+
+        // 1) Buscar pivote en la columna 'col'
+        size_t pivot = col;
+        auto max_val = std::abs(a[col][col]);
+
+        for (size_t row = col + 1; row < n; ++row) {
+          auto val = std::abs(a[row][col]);
+          if (val > max_val) {
+            max_val = val;
+            pivot = row;
+          }
+        }
+
+        // Si el pivote es "cero", matriz singular
+        if (max_val == T{0}) {
+          ostringstream str_stream;
+          str_stream << "matrix is singular, cannot invert ("<< __func__ << "() in " << __FILE__ << ":" << __LINE__ << ")";
+          throw logic_error(str_stream.str());
+        }
+
+        // 2) Intercambiar filas 'col' y 'pivot' si hace falta
+        if (pivot != col) {
+          for (size_t j = 0; j < n; ++j) {
+            std::swap(a[col][j],  a[pivot][j]);
+            std::swap(inv[col][j], inv[pivot][j]);
+          }
+        }
+
+        // 3) Normalizar la fila del pivote: convertir a[col][col] en 1
+        T piv = a[col][col];
+        for (size_t j = 0; j < n; ++j) {
+          a[col][j]  /= piv;
+          inv[col][j] /= piv;
+        }
+
+        // 4) Eliminar el resto de elementos en la columna 'col'
+        for (size_t row = 0; row < n; ++row) {
+          if (row == col) continue;
+          T factor = a[row][col];
+          if (factor == T{0}) continue;
+
+          for (size_t j = 0; j < n; ++j) {
+            a[row][j]  -= factor * a[col][j];
+            inv[row][j] -= factor * inv[col][j];
+          }
+        }
+      }
+
+      return inv;
+    }
   
     template<typename T>
     void matrix<T>::save_as(const string& file_name) const
@@ -463,12 +539,20 @@
       size_t i,j;
       if(!m.size()) { return os<<"\n{ }"; }
   
+      const double eps = 1e-12;
+
       if(m.rows()>1) os<<"\n{ ";
       for(i=0; i<m.rows(); i++)
       {
         os<<"{";
-        for(j=0; j<m.columns()-1; j++) os<<m[i][j]<<", ";
-        os<<m[i][j]<<"}";
+        for(j=0; j<m.columns()-1; j++) {
+          double v = m[i][j];
+          if (std::fabs(v) < eps) v = 0.0;
+          os<<v<<", ";
+        }
+        double v = m[i][j];
+        if (std::fabs(v) < eps) v = 0.0;
+        os<<v<<"}";
   
         if(i<m.rows()-1) os<<",\n  ";
       }
