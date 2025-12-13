@@ -79,6 +79,7 @@
     ln
     log10
     log2
+    inv
 
   Number:
     floating-point-literal
@@ -506,9 +507,7 @@ gv primary()
     string fname = t.name;
     Token next = ts.get();
 
-    // ¿Es una llamada a función de usuario? f( ... )
     if (next.is_symbol('(') && functions.find(fname) != functions.end()) {
-      // Leer argumentos: f(arg1, arg2, ...)
       vector<gv> args;
       Token tok = ts.get();
 
@@ -525,7 +524,7 @@ gv primary()
       return evaluate_function(fname, args);
     }
 
-    // No es función de usuario -> tratamos como variable normal
+    // No es función tratar como variable normal
     ts.unget(next);
     return get_value(fname);
   }
@@ -574,53 +573,45 @@ gv evaluate_function(const string& fname, const vector<gv>& args)
     cout << __func__ << endl;
   #endif
 
-  auto it = functions.find(fname);
-  if (it == functions.end()) error("undefined function ", fname);
+  auto target = functions.find(fname);
+  if (target == functions.end()) error("undefined function ", fname);
 
-  Defined_function& def = it->second;
+  Defined_function& def = target->second;
 
   if (args.size() != def.params.size())
     error("wrong number of arguments in call of function ", fname);
 
-  // 1) Guardar valores anteriores de los parámetros (si existen)
   map<string, Value> old_values;
   for (size_t i = 0; i < def.params.size(); ++i) {
-    const string& pname = def.params[i];
-    auto itv = names.find(pname);
-    if (itv != names.end()) {
-      old_values[pname] = itv->second;
+    const string& cname = def.params[i];
+    auto ctarget = names.find(cname);
+    if (ctarget != names.end()) {
+      old_values[cname] = ctarget->second;
     }
-    // Definir/actualizar parámetro como variable normal (no const)
-    names[pname] = Value(pname, args[i], false);
+    // Definir/actualizar parámetro
+    names[cname] = Value(cname, args[i], false);
   }
-
-  // 2) Inyectar tokens del cuerpo en el Token_stream
-  // Queremos que se lean: body[0], body[1], ..., body[n-1], ';'
-  // Como unget() es LIFO, metemos primero el ';' (print) y luego el cuerpo al revés
-  ts.unget(Token(Token::id::print));  // sentinel al final del cuerpo
+  ts.unget(Token(Token::id::print));
 
   for (int i = int(def.expression.size()) - 1; i >= 0; --i) {
     ts.unget(def.expression[i]);
   }
-
-  // 3) Evaluar el cuerpo como una expresión normal
   gv result = expression();
 
-  // 4) Consumir el sentinel ';' que quedó en el stream
+  // Consumir ';'
   Token t = ts.get();
   if (t.kind != Token::id::print) {
-    // Por si acaso, lo devolvemos si no era ';'
     ts.unget(t);
   }
 
-  // 5) Restaurar entorno de variables
+  // Restaurar entorno de variables
   for (size_t i = 0; i < def.params.size(); ++i) {
-    const string& pname = def.params[i];
-    auto itold = old_values.find(pname);
-    if (itold != old_values.end()) {
-      names[pname] = itold->second;
+    const string& cname = def.params[i];
+    auto target_old = old_values.find(cname);
+    if (target_old != old_values.end()) {
+      names[cname] = target_old->second;
     } else {
-      names.erase(pname);
+      names.erase(cname);
     }
   }
 
@@ -633,8 +624,6 @@ gv define_function(const string& name, const vector<Token>& param_tokens)
     cout << __func__ << endl;
   #endif
 
-  // 1) Parsear la lista de parámetros a partir de los tokens
-  // param_tokens contiene: x , y , z ... (sin el '(' ni el ')')
   vector<string> params;
   if (!param_tokens.empty()) {
     bool expect_name = true;
@@ -645,7 +634,8 @@ gv define_function(const string& name, const vector<Token>& param_tokens)
           error("parameter name expected in definition of function ", name);
         params.push_back(t.name);
         expect_name = false;
-      } else {
+      }
+      else {
         if (!t.is_symbol(','))
           error("',' expected in parameter list of function ", name);
         expect_name = true;
@@ -656,9 +646,6 @@ gv define_function(const string& name, const vector<Token>& param_tokens)
     }
   }
 
-  // 2) Leer el '=' ya lo ha consumido quien llama (statement())
-
-  // 3) Leer el cuerpo hasta ';'
   vector<Token> body;
   while (true) {
     Token tok = ts.get();
@@ -666,13 +653,10 @@ gv define_function(const string& name, const vector<Token>& param_tokens)
     body.push_back(tok);
   }
 
-  // 4) Guardar (o redefinir) la función
   functions[name] = Defined_function{params, body};
 
-  // Indicamos que el último statement fue una definición
   last_statement_was_function_definition = true;
 
-  // El valor de retorno no importa mucho, el print lo trataremos aparte
   return gv(0.0);
 }
 
@@ -732,17 +716,17 @@ void set_precision(int digits)
 
 string format_value_for_file(const gv& v)
 {
-  // 1) Volcamos el gv a un string tal y como se imprime ahora
+  // Volcar gv a string
   ostringstream oss;
   oss << v;
   string s = oss.str();
 
-  // 2) Releemos s como stream y cogemos "tokens"
+  // Recoger tokens ignorando espacios
   istringstream iss(s);
   string token;
   string out;
 
-  while (iss >> token) {   // operator>> en string salta cualquier whitespace
+  while (iss >> token) {
     out += token;
   }
 
@@ -751,8 +735,7 @@ string format_value_for_file(const gv& v)
 
 gv parse_value_expr(const string& expr_str)
 {
-  // Evaluar expr_str como si el usuario hubiera escrito: expr_str;
-  streambuf* old_buf = std::cin.rdbuf();
+  streambuf* old_buf = cin.rdbuf();
 
   istringstream iss(expr_str + ";");
   cin.rdbuf(iss.rdbuf());
@@ -779,7 +762,7 @@ string format_function_for_file(const string& fname, const Defined_function& fde
 {
   ostringstream oss;
 
-  // Cabecera: f(x,y) =
+  // f(x,y) =
   oss << fname << "(";
   for (size_t i = 0; i < fdef.params.size(); ++i) {
     oss << fdef.params[i];
@@ -787,7 +770,7 @@ string format_function_for_file(const string& fname, const Defined_function& fde
   }
   oss << ") = ";
 
-  // Cuerpo: reconstruimos la expresión
+  // Reconstruir la expresión
   for (const auto& tok : fdef.expression) {
     if (tok.kind == Token::id::number) {
       oss << tok.value;
@@ -974,7 +957,7 @@ void load_env(string filename)
 
     stream >> name >> eq >> value_str >> is_const_str >> eq >> is_const;
 
-    // Comprobar si name contiene paréntesis -> función
+    // Comprobar si es función
     bool is_function = (name.find('(') != string::npos) && (name.find(')') != string::npos);
 
     if (!is_function){
@@ -1014,7 +997,6 @@ void load_env(string filename)
     }
     else{
       if (!is_function_declared(name)){
-        // Definir la función usando tu propio parser
         string func = name + " = " + value_str + ";";
         streambuf* old_buf = cin.rdbuf();
         istringstream func_stream(func);
@@ -1137,10 +1119,8 @@ gv statement()
         Token name_token = t;
         Token next = ts.get();
 
-        // ¿Puede ser una definición de función? f(...)
         if (next.is_symbol('(')) {
-          // Leemos todo hasta la ')' correspondiente para ver qué hay después
-          vector<Token> params;   // tokens entre '(' y ')', más la ')'
+          vector<Token> params;
           int level = 1;
 
           while (level > 0) {
@@ -1149,14 +1129,11 @@ gv statement()
             if (x.is_symbol('(')) ++level;
             else if (x.is_symbol(')')) --level;
           }
-          // Ahora params incluye TODO desde el primer token tras '(' hasta la ')'
 
-          Token after = ts.get(); // token justo después de los paréntesis
+          Token after = ts.get();
 
           if (after.is_symbol('=')) {
-            // DEFINICIÓN DE FUNCIÓN: f(x,y)=...
-
-            // Quitamos la ')' del final para quedarnos solo con los parámetros
+            // Quitar ')' para dejar solo los parámetros
             if (!params.empty() && params.back().is_symbol(')')) {
               params.pop_back();
             }
@@ -1164,8 +1141,7 @@ gv statement()
             return define_function(name_token.name, params);
           } 
           else {
-            // NO es definición (es una expresión que empieza por f(...))
-            // Devolvemos todo al stream para que lo procese expression()
+            // No es definición, devolver todo al stream
             ts.unget(after);
             for (int i = int(params.size()) - 1; i >= 0; --i)
               ts.unget(params[i]);
@@ -1175,7 +1151,6 @@ gv statement()
           }
         }
 
-        // Si no había '(', puede ser asign o expresión normal
         if (next.is_symbol('=')) {
           ts.unget(next);
           ts.unget(name_token);
@@ -1221,6 +1196,9 @@ void help()
     << "\n   - Inverse trig:    asin(x), acos(x), atan(x)"
     << "\n   - Exponential:     exp(x), pow(x, y)"
     << "\n   - Logarithmic:     ln(x), log10(x), log2(x)"
+    << "\n   - Inverse:"
+    << "\n       inv(x)  ->  1/x  (for nonzero scalars)"
+    << "\n       inv(A)  ->  matrix inverse of A (square, non-singular matrices)"
     << "\n"
     << "\n - Variables and Constants:"
     << "\n   - Assign a variable:      x = 42;"
@@ -1252,6 +1230,11 @@ void help()
     << "\n       { 366.0, 732.0, 1098.0 }"
     << "\n     };"
     << "\n     a * v;      (matrix–vector / matrix–matrix operations, when valid)"
+    << "\n"
+    << "\n   Example of matrix inverse:"
+    << "\n     A = {{1,2},{3,4}};"
+    << "\n     B = inv(A);      (B is the inverse of A)"
+    << "\n     A * B;           (returns the identity matrix)"
     << "\n"
     << "\n - Environment Commands:"
     << "\n   - show env;                 --> display current variables/constants"

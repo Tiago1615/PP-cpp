@@ -358,7 +358,6 @@
     template<typename T>
     matrix<T> matrix<T>::make_inverse() const
     {
-      // Debe ser cuadrada
       if (rows__ != columns__) {
         ostringstream str_stream;
         str_stream << "cannot invert a non-square matrix ("<< __func__ << "() in " << __FILE__ << ":" << __LINE__ << ")";
@@ -367,19 +366,14 @@
 
       const size_t n = rows__;
 
-      // Copiamos la matriz original en 'a'
       matrix<T> a(*this);
 
-      // Construimos la identidad en 'inv'
       matrix<T> inv(n, n);
       for (size_t i = 0; i < n; ++i)
         for (size_t j = 0; j < n; ++j)
           inv[i][j] = (i == j) ? T{1} : T{0};
 
-      // Gauss-Jordan con pivoteo parcial
       for (size_t col = 0; col < n; ++col) {
-
-        // 1) Buscar pivote en la columna 'col'
         size_t pivot = col;
         auto max_val = std::abs(a[col][col]);
 
@@ -391,14 +385,14 @@
           }
         }
 
-        // Si el pivote es "cero", matriz singular
-        if (max_val == T{0}) {
+        // Comprobar si el pivote es "casi cero"
+        const T pivot_tol = T(1e-12);
+        if (abs(max_val) < pivot_tol) {
           ostringstream str_stream;
-          str_stream << "matrix is singular, cannot invert ("<< __func__ << "() in " << __FILE__ << ":" << __LINE__ << ")";
+          str_stream << "matrix is singular (pivot below tolerance), cannot invert (" << __func__ << "() in " << __FILE__ << ":" << __LINE__ << ")";
           throw logic_error(str_stream.str());
         }
 
-        // 2) Intercambiar filas 'col' y 'pivot' si hace falta
         if (pivot != col) {
           for (size_t j = 0; j < n; ++j) {
             std::swap(a[col][j],  a[pivot][j]);
@@ -406,14 +400,12 @@
           }
         }
 
-        // 3) Normalizar la fila del pivote: convertir a[col][col] en 1
         T piv = a[col][col];
         for (size_t j = 0; j < n; ++j) {
           a[col][j]  /= piv;
           inv[col][j] /= piv;
         }
 
-        // 4) Eliminar el resto de elementos en la columna 'col'
         for (size_t row = 0; row < n; ++row) {
           if (row == col) continue;
           T factor = a[row][col];
