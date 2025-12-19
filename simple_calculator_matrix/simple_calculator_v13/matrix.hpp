@@ -375,10 +375,10 @@
 
       for (size_t col = 0; col < n; ++col) {
         size_t pivot = col;
-        auto max_val = std::abs(a[col][col]);
+        auto max_val = abs(a[col][col]);
 
         for (size_t row = col + 1; row < n; ++row) {
-          auto val = std::abs(a[row][col]);
+          auto val = abs(a[row][col]);
           if (val > max_val) {
             max_val = val;
             pivot = row;
@@ -395,8 +395,8 @@
 
         if (pivot != col) {
           for (size_t j = 0; j < n; ++j) {
-            std::swap(a[col][j],  a[pivot][j]);
-            std::swap(inv[col][j], inv[pivot][j]);
+            swap(a[col][j],  a[pivot][j]);
+            swap(inv[col][j], inv[pivot][j]);
           }
         }
 
@@ -539,11 +539,11 @@
         os<<"{";
         for(j=0; j<m.columns()-1; j++) {
           double v = m[i][j];
-          if (std::fabs(v) < eps) v = 0.0;
+          if (fabs(v) < eps) v = 0.0;
           os<<v<<", ";
         }
         double v = m[i][j];
-        if (std::fabs(v) < eps) v = 0.0;
+        if (fabs(v) < eps) v = 0.0;
         os<<v<<"}";
   
         if(i<m.rows()-1) os<<",\n  ";

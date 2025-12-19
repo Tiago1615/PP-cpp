@@ -355,7 +355,6 @@ gv expression();
 gv define_function(const string& name, const vector<Token>& param_tokens);
 gv evaluate_function(const string& name, const vector<gv>& args);
 gv statement();
-bool last_statement_was_function_definition = false;
 
 gv function_name()
 {
@@ -654,8 +653,6 @@ gv define_function(const string& name, const vector<Token>& param_tokens)
   }
 
   functions[name] = Defined_function{params, body};
-
-  last_statement_was_function_definition = true;
 
   return gv(0.0);
 }
