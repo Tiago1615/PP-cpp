@@ -587,7 +587,7 @@ gv evaluate_function(const string& fname, const vector<gv>& args)
     if (ctarget != names.end()) {
       old_values[cname] = ctarget->second;
     }
-    // Definir/actualizar parámetro
+    // Actualizar parámetro
     names[cname] = Value(cname, args[i], false);
   }
   ts.unget(Token(Token::id::print));
